@@ -21,7 +21,7 @@ let make_operator_in_y (operator : address) (limit : nat) (c : constants) : oper
 #if Y_IS_FA2
     let _limit = limit in // otherwise LIGO complains about 'limit' being unused
     let param = [ Add_operator
-            { owner = Tezos.self_address
+            { owner = (Tezos.get_self_address ())
             ; operator = operator
             ; token_id = c.y_token_id
             } ] in
@@ -45,7 +45,7 @@ let make_operator_in_y (operator : address) (limit : nat) (c : constants) : oper
 let remove_operator_in_y (operator : address) (c : constants) : operation =
 #if Y_IS_FA2
     let param = [ Remove_operator
-            { owner = Tezos.self_address
+            { owner = (Tezos.get_self_address ())
             ; operator = operator
             ; token_id = c.y_token_id
             } ] in

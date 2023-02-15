@@ -217,7 +217,7 @@ let compute_reward_amount
     // Follows the solidity impl:
     // https://github.com/Uniswap/v3-staker/blob/eff32b5509f87b3e66734c42ba5fc7c607dc583c/contracts/libraries/RewardMath.sol
 
-    require (Tezos.now >= start_time)
+    require (Tezos.get_now() >= start_time)
         "Should not be called before start time";
 
     let max_timestamp(a, b : timestamp * timestamp) : timestamp =
@@ -232,7 +232,7 @@ let compute_reward_amount
         {x128 = seconds_per_liquidity_inside_diff.x128 * liquidity} in
 
     let total_seconds_for_reward =
-        assert_nat(max_timestamp(end_time, Tezos.now) - start_time, "impossible") in
+        assert_nat(max_timestamp(end_time, Tezos.get_now()) - start_time, "impossible") in
     let total_seconds_unclaimed =
         {x128 =
             assert_nat
@@ -303,9 +303,9 @@ end
 let create_incentive(p, s : incentive_params * storage) : return = begin
     require (p.total_reward > 0n)
         "Reward must be positive";
-    require (Tezos.now <= p.start_time)
+    require (Tezos.get_now() <= p.start_time)
         "Start time must be now or in the future";
-    require (p.start_time - Tezos.now <= int s.config.max_incentive_start_lead_time)
+    require (p.start_time - Tezos.get_now() <= int s.config.max_incentive_start_lead_time)
         "Start time too far into future";
     require (p.start_time < p.end_time)
         "Start time must be before end time";
@@ -326,8 +326,8 @@ let create_incentive(p, s : incentive_params * storage) : return = begin
     } in
 
     let op = Tezos.transaction
-        [   { from_ = Tezos.sender
-            ; txs = [{to_ = Tezos.self_address; token_id = p.reward_token.token_id; amount = p.total_reward}]
+        [   { from_ = (Tezos.get_sender ())
+            ; txs = [{to_ = (Tezos.get_self_address ()); token_id = p.reward_token.token_id; amount = p.total_reward}]
             }
         ] 0mutez (transfer_ep p.reward_token.address) in
     ([op], s)
@@ -339,7 +339,7 @@ let end_incentive(id, s : incentive_id * storage) : return = begin
         | Some v -> v
         | None -> (failwith "No such incentive" : incentive) in
 
-    require (Tezos.now >= incentive.p.end_time)
+    require (Tezos.get_now() >= incentive.p.end_time)
         "Cannot end incentive before end time";
 
     let refund = incentive.total_reward_unclaimed in
@@ -354,7 +354,7 @@ let end_incentive(id, s : incentive_id * storage) : return = begin
     let s = {s with incentives = Big_map.add id incentive s.incentives} in
 
     let op = Tezos.transaction
-        [   { from_ = Tezos.self_address
+        [   { from_ = (Tezos.get_self_address ())
             ; txs = [{to_ = incentive.p.refundee; token_id = incentive.p.reward_token.token_id; amount = refund}]
             }
         ] 0mutez (transfer_ep incentive.p.reward_token.address) in
@@ -375,17 +375,17 @@ end
 // This might be improved in the future versions.
 let register_deposit(position_id, s : position_id * storage) : return = begin
     let new_deposit : deposit =
-        { owner = Tezos.sender
+        { owner = (Tezos.get_sender ())
         ; number_of_stakes = 0n
         ; tick_index_range = (None : (tick_index * tick_index) option)
         } in
     // This insertion is safe - if it overwrites a value, the subsequent attempt
     // to transfer position will fail (since positions are NFT).
-    let s = {s with deposits = Map.add position_id new_deposit s.deposits } in
+    let s = {s with deposits = Big_map.add position_id new_deposit s.deposits } in
 
     let op = Tezos.transaction
-        [   { from_ = Tezos.sender
-            ; txs = [{to_ = Tezos.self_address; token_id = position_id; amount = 1n}]
+        [   { from_ = (Tezos.get_sender ())
+            ; txs = [{to_ = (Tezos.get_self_address ()); token_id = position_id; amount = 1n}]
             }
         ] 0mutez (transfer_ep s.uniswap) in
 
@@ -398,7 +398,7 @@ let transfer_deposit(position_id, to_, s : position_id * address * storage) : re
         | Some v -> v
         | None -> (failwith "Deposit does not exist" : deposit) in
 
-    require (deposit.owner = Tezos.sender)
+    require (deposit.owner = (Tezos.get_sender ()))
         "Can only be called by the deposit owner";
 
     let deposit = {deposit with owner = to_} in
@@ -414,13 +414,13 @@ let withdraw_deposit(position_id, to_, s : position_id * address * storage) : re
 
     require (deposit.number_of_stakes = 0n)
         "Cannot withdraw token while staked";
-    require (deposit.owner = Tezos.sender)
+    require (deposit.owner = (Tezos.get_sender ()))
         "Only owner can withdraw token";
 
     let s = {s with deposits = Big_map.remove position_id s.deposits} in
 
     let op = Tezos.transaction
-        [   { from_ = Tezos.self_address
+        [   { from_ = (Tezos.get_self_address ())
             ; txs = [{to_ = to_; token_id = position_id; amount = 1n}]
             }
         ] 0mutez (transfer_ep s.uniswap) in
@@ -442,7 +442,7 @@ let stake_token(incentive_id, position_id, s : incentive_id * position_id * stor
         | Some v -> v
         | None -> (failwith "Deposit does not exist" : deposit) in
 
-    require (deposit.owner = Tezos.sender)
+    require (deposit.owner = (Tezos.get_sender ()))
         "Only owner can stake token";
 
     let get_position_info_ep =
@@ -532,7 +532,7 @@ let unstake_token(incentive_id, position_id, s : incentive_id * position_id * st
         | UstNotStarted -> unit
         | _ -> failwith "Reentrant `unstake_token` call" in
 
-    let s = {s with unstake_token_phase = UstAskedCumulativesInfo ((incentive_id, position_id), Tezos.sender)} in
+    let s = {s with unstake_token_phase = UstAskedCumulativesInfo ((incentive_id, position_id), (Tezos.get_sender ()))} in
 
     let deposit = match Big_map.find_opt position_id s.deposits with
         | Some v -> v
@@ -578,7 +578,7 @@ let unstake_token_on_sum_info(cumulatives_snapshot, s : cumulatives_inside_snaps
     // of the incentive.
     // This is necessary e.g. to later terminate the related incentive and
     // reward the incentive's refundee.
-    if (Tezos.now < incentive.p.end_time) then
+    if (Tezos.get_now() < incentive.p.end_time) then
         require (deposit.owner = orig_sender)
             "Only owner can withdraw token before incentive end time"
     else ();
@@ -626,7 +626,7 @@ end
 // If no explicit reward amount is requested (`reward_requested = None`), all the
 // available reward is transferred.
 let claim_reward(reward_token, to_, reward_requested, s : fa2_token * address * nat option * storage) : return = begin
-    let reward_key = (reward_token, Tezos.sender) in
+    let reward_key = (reward_token, (Tezos.get_sender ())) in
     let available_reward = match Big_map.find_opt reward_key s.rewards with
         | Some v -> v
         | None -> 0n in
@@ -640,7 +640,7 @@ let claim_reward(reward_token, to_, reward_requested, s : fa2_token * address * 
     let s = {s with rewards = Big_map.add reward_key reward_remaining s.rewards} in
 
     let op = Tezos.transaction
-        [   { from_ = Tezos.self_address
+        [   { from_ = (Tezos.get_self_address ())
             ; txs = [{to_ = to_; token_id = reward_token.token_id; amount = reward_picked}]
             }
         ] 0mutez (transfer_ep reward_token.address) in
